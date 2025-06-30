@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Showdown Analizer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SHOWDOWN ANALIZER</h1>
+            <p>Pega el ID de una batalla de showdown para conectarte en tiempo real.</p>
+        </header>
+
+        <main>
+            <form hx-ext="sse" sse-connect="/connect" sse-swap="message" hx-target="#battle-log" hx-swap="beforeend">
+                <input
+                    type="text"
+                    name="roomid"
+                    placeholder="Ej: gen9randombattle-1234567890">
+                <button type="submit">Conectar</button>
+            </form>
+
+            <div class="result-container">
+                <h2>Log de Batalla En Vivo</h2>
+                <div id="battle-log" class="log-window">
+                    <p class="placeholder">Los eventos se muestran aca...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
