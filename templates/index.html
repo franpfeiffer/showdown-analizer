@@ -6,7 +6,6 @@
     <title>Showdown Analizer</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
 </head>
 <body>
     <div class="container">
@@ -16,10 +15,12 @@
         </header>
 
         <main>
-            <form hx-ext="sse" sse-connect="/connect" sse-swap="message" hx-target="#battle-log" hx-swap="beforeend">
+            <form id="connect-form">
                 <input
+                    class="input-uwu"
                     type="text"
                     name="roomid"
+                    id="roomid-input"
                     placeholder="Ej: gen9randombattle-1234567890">
                 <button type="submit">Conectar</button>
             </form>
@@ -32,5 +33,56 @@
             </div>
         </main>
     </div>
+
+    <script>
+        document.getElementById('connect-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const roomid = document.getElementById('roomid-input').value.trim();
+            if (!roomid) {
+                alert('Por favor ingresa un ID de sala válido');
+                return;
+            }
+
+            // Clear previous log
+            const battleLog = document.getElementById('battle-log');
+            battleLog.innerHTML = '<p class="placeholder">Conectando...</p>';
+
+            // Close existing connection if any
+            if (window.eventSource) {
+                window.eventSource.close();
+            }
+
+            // Create new EventSource with roomid as query parameter
+            const eventSource = new EventSource(`http://localhost:8081/connect?roomid=${encodeURIComponent(roomid)}`);
+            window.eventSource = eventSource;
+
+            eventSource.onmessage = function(event) {
+                const battleLog = document.getElementById('battle-log');
+                if (battleLog.querySelector('.placeholder')) {
+                    battleLog.innerHTML = '';
+                }
+                
+                // Create a new paragraph element and append it
+                const p = document.createElement('p');
+                p.innerHTML = event.data;
+                battleLog.appendChild(p);
+                
+                // Auto-scroll to bottom
+                battleLog.scrollTop = battleLog.scrollHeight;
+            };
+
+            eventSource.onerror = function(event) {
+                console.error('EventSource error:', event);
+                const battleLog = document.getElementById('battle-log');
+                battleLog.innerHTML = '<p class="error">Error de conexión. Verifica el ID de la sala e intenta nuevamente.</p>';
+                eventSource.close();
+            };
+
+            eventSource.onopen = function(event) {
+                console.log('EventSource connection opened');
+            };
+        });
+    </script>
 </body>
 </html>

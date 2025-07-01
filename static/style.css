@@ -103,3 +103,37 @@ button:hover {
     margin: 0 0 5px 0;
     padding: 0;
 }
+
+.input-uwu {
+    background-color: #1e1e1e;
+    width: 100%;
+    color: #f0f0f0;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 14px;
+    box-sizing: border-box;
+    margin-bottom: 15px;
+    resize: vertical;
+    padding: 15px;
+    border: 1px solid #444;
+    border-radius: 5px;
+}
+
+.error {
+    color: #ff6b6b;
+    font-weight: bold;
+    text-align: center;
+    padding: 10px;
+    background-color: rgba(255, 107, 107, 0.1);
+    border: 1px solid #ff6b6b;
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.logline {
+    color: #a0a0a0;
+    word-wrap: break-word;
+}
+
+.logline strong {
+    color: #e0e0e0;
+}

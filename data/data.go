@@ -18,6 +18,17 @@ type MoveData struct {
 	Power int    `json:"power"`
 }
 
+type RawPokemonData struct {
+	Name  string   `json:"name"`
+	Types []string `json:"types"`
+}
+
+type RawMoveData struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Power int    `json:"basePower"`
+}
+
 var pokemonDB map[string]PokemonData
 var moveDB map[string]MoveData
 
@@ -27,13 +38,18 @@ func LoadPokemonData(path string) error {
 		return err
 	}
 	defer file.Close()
-	var pokes []PokemonData
-	if err := json.NewDecoder(file).Decode(&pokes); err != nil {
+
+	var rawData map[string]RawPokemonData
+	if err := json.NewDecoder(file).Decode(&rawData); err != nil {
 		return err
 	}
+
 	pokemonDB = make(map[string]PokemonData)
-	for _, p := range pokes {
-		pokemonDB[strings.ToLower(p.Name)] = p
+	for _, p := range rawData {
+		pokemonDB[strings.ToLower(p.Name)] = PokemonData{
+			Name:  p.Name,
+			Types: p.Types,
+		}
 	}
 	return nil
 }
@@ -44,13 +60,19 @@ func LoadMoveData(path string) error {
 		return err
 	}
 	defer file.Close()
-	var moves []MoveData
-	if err := json.NewDecoder(file).Decode(&moves); err != nil {
+
+	var rawData map[string]RawMoveData
+	if err := json.NewDecoder(file).Decode(&rawData); err != nil {
 		return err
 	}
+
 	moveDB = make(map[string]MoveData)
-	for _, m := range moves {
-		moveDB[strings.ToLower(m.Name)] = m
+	for _, m := range rawData {
+		moveDB[strings.ToLower(m.Name)] = MoveData{
+			Name:  m.Name,
+			Type:  m.Type,
+			Power: m.Power,
+		}
 	}
 	return nil
 }

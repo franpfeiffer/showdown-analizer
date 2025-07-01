@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 const (
-	showdownServerURL = "wss://sim.psim.us/showdown/websocket"
+	showdownServerURL = "wss://sim3.psim.us/showdown/websocket"
 )
 
 type ShowdownClient struct {
@@ -23,13 +24,34 @@ func NewShowdownClient() (*ShowdownClient, error) {
 	}
 
 	log.Printf("Conectando a %s", u.String())
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+
+	// Set up dialer with timeout
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	c, resp, err := dialer.Dial(u.String(), nil)
 	if err != nil {
+		if resp != nil {
+			log.Printf("HTTP Response Status: %s", resp.Status)
+		}
 		return nil, fmt.Errorf("error al conectar con el websocket: %w", err)
 	}
 
 	client := &ShowdownClient{Conn: c}
 	log.Println("conectado exitosamente al servidor de showdown.")
+
+	// Set up ping handler
+	c.SetPingHandler(func(appData string) error {
+		log.Printf("Received ping, sending pong")
+		return c.WriteMessage(websocket.PongMessage, []byte(appData))
+	})
+
+	// Set up close handler
+	c.SetCloseHandler(func(code int, text string) error {
+		log.Printf("Connection closed: %d %s", code, text)
+		return nil
+	})
 
 	return client, nil
 }
@@ -54,5 +76,9 @@ func (sc *ShowdownClient) Send(message string) error {
 }
 
 func (sc *ShowdownClient) JoinRoom(roomID string) error {
+	// First, try to authenticate (optional)
+	// sc.Send("|/trn TestUser,0,")
+
+	// Then join the room
 	return sc.Send(fmt.Sprintf("|/join %s", roomID))
 }

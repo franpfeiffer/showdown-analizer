@@ -27,8 +27,13 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConnect(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received connection request from %s", r.RemoteAddr)
+
 	roomID := r.URL.Query().Get("roomid")
+	log.Printf("Room ID requested: %s", roomID)
+
 	if roomID == "" {
+		log.Printf("Error: Empty room ID")
 		http.Error(w, "El ID de la sala no puede estar vacío", http.StatusBadRequest)
 		return
 	}
@@ -36,15 +41,19 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Cache-Control")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		log.Printf("Error: Streaming not supported")
 		http.Error(w, "Streaming no soportado", http.StatusInternalServerError)
 		return
 	}
 
 	messages := make(chan string)
 
+	log.Printf("Creating Showdown client...")
 	sdClient, err := client.NewShowdownClient()
 	if err != nil {
 		log.Printf("Error al conectar con Showdown: %v", err)
@@ -53,20 +62,25 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer sdClient.Conn.Close()
+
+	log.Printf("Showdown client created successfully")
 	battleState := game.NewBattleState()
 
 	go func() {
 		defer close(messages)
+		log.Printf("Starting message reader goroutine")
 		for {
 			_, message, err := sdClient.Conn.ReadMessage()
 			if err != nil {
-				log.Println("Desconectado del servidor de Showdown.")
+				log.Printf("Error reading message from Showdown: %v", err)
 				return
 			}
+			log.Printf("Received message from Showdown: %s", string(message))
 			messages <- string(message)
 		}
 	}()
 
+	log.Printf("Attempting to join room: %s", roomID)
 	if err := sdClient.JoinRoom(roomID); err != nil {
 		log.Printf("Error al unirse a la sala: %v", err)
 		fmt.Fprintf(w, "data: <p>Error al unirse a la sala: %v</p>\n\n", err)
@@ -74,6 +88,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Successfully joined room: %s", roomID)
 	fmt.Fprintf(w, "data: <p>Conectado a la sala <strong>%s</strong>. Esperando eventos...</p>\n\n", roomID)
 	flusher.Flush()
 
@@ -101,7 +116,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	if err := data.LoadPokemonData("data/pokemon.json"); err != nil {
+	if err := data.LoadPokemonData("data/pokedex.json"); err != nil {
 		log.Fatalf("Error cargando datos de Pokémon: %v", err)
 	}
 	if err := data.LoadMoveData("data/moves.json"); err != nil {
@@ -116,9 +131,9 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/connect", handleConnect)
 
-	fmt.Println("Servidor iniciado en http://localhost:8080")
+	fmt.Println("Servidor iniciado en http://localhost:8081")
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         ":8081",
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
