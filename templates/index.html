@@ -27,6 +27,7 @@
 
             <div class="result-container">
                 <h2>Log de Batalla En Vivo</h2>
+                <div id="suggestion-box" style="margin-bottom: 20px;"></div>
                 <div id="battle-log" class="log-window">
                     <p class="placeholder">Los eventos se muestran aca...</p>
                 </div>
@@ -44,32 +45,31 @@
                 return;
             }
 
-            // Clear previous log
             const battleLog = document.getElementById('battle-log');
             battleLog.innerHTML = '<p class="placeholder">Conectando...</p>';
 
-            // Close existing connection if any
             if (window.eventSource) {
                 window.eventSource.close();
             }
 
-            // Create new EventSource with roomid as query parameter
-            const eventSource = new EventSource(`http://localhost:8081/connect?roomid=${encodeURIComponent(roomid)}`);
+            const eventSource = new EventSource(`http://localhost:42069/connect?roomid=${encodeURIComponent(roomid)}`);
             window.eventSource = eventSource;
 
             eventSource.onmessage = function(event) {
                 const battleLog = document.getElementById('battle-log');
+                const suggestionBox = document.getElementById('suggestion-box');
                 if (battleLog.querySelector('.placeholder')) {
                     battleLog.innerHTML = '';
                 }
                 
-                // Create a new paragraph element and append it
-                const p = document.createElement('p');
-                p.innerHTML = event.data;
-                battleLog.appendChild(p);
-                
-                // Auto-scroll to bottom
-                battleLog.scrollTop = battleLog.scrollHeight;
+                if (event.data.includes("class='battle-summary'")) {
+                    suggestionBox.innerHTML = event.data;
+                } else {
+                    const p = document.createElement('p');
+                    p.innerHTML = event.data;
+                    battleLog.appendChild(p);
+                    battleLog.scrollTop = battleLog.scrollHeight;
+                }
             };
 
             eventSource.onerror = function(event) {

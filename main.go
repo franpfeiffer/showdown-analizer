@@ -52,33 +52,32 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messages := make(chan string)
+	defer close(messages)
 
-	log.Printf("Creating Showdown client...")
-	sdClient, err := client.NewShowdownClient()
+	battleState := game.NewBattleState()
+
+	reconnectAttempts := 0
+	const maxReconnects = 3
+	var sdClient *client.ShowdownClient
+	var err error
+
+reconnect:
+	log.Printf("Creating Showdown client (attempt %d)...", reconnectAttempts+1)
+	sdClient, err = client.NewShowdownClient()
 	if err != nil {
 		log.Printf("Error al conectar con Showdown: %v", err)
 		fmt.Fprintf(w, "data: <p>Error al conectar con Showdown: %v</p>\n\n", err)
 		flusher.Flush()
+		reconnectAttempts++
+		if reconnectAttempts < maxReconnects {
+			time.Sleep(2 * time.Second)
+			goto reconnect
+		}
 		return
 	}
 	defer sdClient.Conn.Close()
 
 	log.Printf("Showdown client created successfully")
-	battleState := game.NewBattleState()
-
-	go func() {
-		defer close(messages)
-		log.Printf("Starting message reader goroutine")
-		for {
-			_, message, err := sdClient.Conn.ReadMessage()
-			if err != nil {
-				log.Printf("Error reading message from Showdown: %v", err)
-				return
-			}
-			log.Printf("Received message from Showdown: %s", string(message))
-			messages <- string(message)
-		}
-	}()
 
 	log.Printf("Attempting to join room: %s", roomID)
 	if err := sdClient.JoinRoom(roomID); err != nil {
@@ -92,22 +91,63 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "data: <p>Conectado a la sala <strong>%s</strong>. Esperando eventos...</p>\n\n", roomID)
 	flusher.Flush()
 
+	go func() {
+		for {
+			_, message, err := sdClient.Conn.ReadMessage()
+			if err != nil {
+				log.Printf("Error reading message from Showdown: %v", err)
+				messages <- "__ERROR__:" + err.Error()
+				return
+			}
+			log.Printf("Received message from Showdown: %s", string(message))
+			messages <- string(message)
+		}
+	}()
+
+	pingTicker := time.NewTicker(20 * time.Second)
+	defer pingTicker.Stop()
+	go func() {
+		for range pingTicker.C {
+			messages <- "__PING__"
+		}
+	}()
+
 	for msg := range messages {
+		if msg == "__PING__" {
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+			continue
+		}
+		if strings.HasPrefix(msg, "__ERROR__:") {
+			reconnectAttempts++
+			if reconnectAttempts < maxReconnects {
+				fmt.Fprintf(w, "data: <p>Reconectando con Showdown... (intento %d/%d)</p>\n\n", reconnectAttempts+1, maxReconnects)
+				flusher.Flush()
+				time.Sleep(2 * time.Second)
+				goto reconnect
+			} else {
+				fmt.Fprintf(w, "data: <p class='error'>Error persistente al conectar con Showdown: %s</p>\n\n", msg[len("__ERROR__:"):])
+				flusher.Flush()
+				break
+			}
+		}
 		lines := strings.Split(msg, "\n")
 		for _, line := range lines {
-			if len(line) > 1 {
+			if strings.HasPrefix(line, "|turn|") ||
+				strings.HasPrefix(line, "|move|") ||
+				strings.HasPrefix(line, "|switch|") ||
+				strings.HasPrefix(line, "|damage|") ||
+				strings.HasPrefix(line, "|faint|") ||
+				strings.HasPrefix(line, "|start|") ||
+				strings.HasPrefix(line, "|upkeep|") ||
+				strings.HasPrefix(line, "|win|") ||
+				strings.HasPrefix(line, "|lose|") {
 				parser.ProcessLine(battleState, line)
-				isRelevant := false
-				if strings.HasPrefix(line, "|turn|") || strings.HasPrefix(line, "|move|") || strings.HasPrefix(line, "|switch|") || strings.HasPrefix(line, "|damage|") || strings.HasPrefix(line, "|faint|") {
-					isRelevant = true
-				}
 				fmt.Fprintf(w, "data: <p class='logline'>%s</p>\n\n", template.HTMLEscapeString(line))
 				flusher.Flush()
-				if isRelevant {
-					summary := parser.RenderBattleState(battleState)
-					fmt.Fprintf(w, "data: %s\n\n", summary)
-					flusher.Flush()
-				}
+				summary := parser.RenderBattleState(battleState)
+				fmt.Fprintf(w, "data: %s\n\n", summary)
+				flusher.Flush()
 			}
 		}
 	}
@@ -131,9 +171,9 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/connect", handleConnect)
 
-	fmt.Println("Servidor iniciado en http://localhost:8081")
+	fmt.Println("Servidor iniciado en http://localhost:42069")
 	srv := &http.Server{
-		Addr:         ":8081",
+		Addr:         ":42069",
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
