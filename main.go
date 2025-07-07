@@ -32,7 +32,6 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	roomID := r.URL.Query().Get("roomid")
 	log.Printf("Room ID requested: %s", roomID)
 
-	// Asegurar que el roomID tenga el prefijo 'battle-'
 	if !strings.HasPrefix(roomID, "battle-") {
 		roomID = "battle-" + roomID
 		log.Printf("Room ID corregido a: %s", roomID)
@@ -57,11 +56,17 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages := make(chan string)
-	// Canal para indicar cierre seguro
+	messages := make(chan string, 100)
 	done := make(chan struct{})
-	defer close(messages)
-	defer close(done)
+
+	defer func() {
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+		close(messages)
+	}()
 
 	battleState := game.NewBattleState()
 
@@ -101,6 +106,14 @@ reconnect:
 	flusher.Flush()
 
 	go func() {
+		defer func() {
+			select {
+			case <-done:
+			default:
+				close(done)
+			}
+		}()
+
 		for {
 			select {
 			case <-done:
@@ -109,18 +122,16 @@ reconnect:
 				_, message, err := sdClient.Conn.ReadMessage()
 				if err != nil {
 					log.Printf("Error reading message from Showdown: %v", err)
-					// Solo enviar error si el canal sigue abierto
 					select {
 					case messages <- "__ERROR__:" + err.Error():
-					default:
+					case <-done:
 					}
 					return
 				}
 				log.Printf("Received message from Showdown: %s", string(message))
-				// Solo enviar si el canal sigue abierto
 				select {
 				case messages <- string(message):
-				default:
+				case <-done:
 				}
 			}
 		}
@@ -129,66 +140,81 @@ reconnect:
 	pingTicker := time.NewTicker(20 * time.Second)
 	defer pingTicker.Stop()
 	go func() {
-		for range pingTicker.C {
-			messages <- "__PING__"
+		for {
+			select {
+			case <-pingTicker.C:
+				select {
+				case messages <- "__PING__":
+				case <-done:
+					return
+				}
+			case <-done:
+				return
+			}
 		}
 	}()
 
-	for msg := range messages {
-		if msg == "__PING__" {
-			fmt.Fprintf(w, ": ping\n\n")
-			flusher.Flush()
-			continue
-		}
-		if strings.HasPrefix(msg, "__ERROR__:") {
-			reconnectAttempts++
-			if reconnectAttempts < maxReconnects {
-				fmt.Fprintf(w, "data: <p>Reconectando con Showdown... (intento %d/%d)</p>\n\n", reconnectAttempts+1, maxReconnects)
-				flusher.Flush()
-				time.Sleep(2 * time.Second)
-				goto reconnect
-			} else {
-				fmt.Fprintf(w, "data: <p class='error'>Error persistente al conectar con Showdown: %s</p>\n\n", msg[len("__ERROR__:"):])
-				flusher.Flush()
-				break
+	for {
+		select {
+		case msg, ok := <-messages:
+			if !ok {
+				return
 			}
-		}
-		lines := strings.Split(msg, "\n")
-		var anyLogSent bool
-		var battleEnded bool
-		for _, line := range lines {
-			if strings.HasPrefix(line, "|turn|") ||
-				strings.HasPrefix(line, "|move|") ||
-				strings.HasPrefix(line, "|switch|") ||
-				strings.HasPrefix(line, "|damage|") ||
-				strings.HasPrefix(line, "|faint|") ||
-				strings.HasPrefix(line, "|start|") ||
-				strings.HasPrefix(line, "|upkeep|") ||
-				strings.HasPrefix(line, "|win|") ||
-				strings.HasPrefix(line, "|lose|") {
-				parser.ProcessLine(battleState, line)
-				log.Printf("Enviando al frontend: %s", line)
-				fmt.Fprintf(w, "data: <p class='logline'>%s</p>\n\n", template.HTMLEscapeString(line))
+			if msg == "__PING__" {
+				fmt.Fprintf(w, ": ping\n\n")
 				flusher.Flush()
-				anyLogSent = true
-				if strings.HasPrefix(line, "|win|") || strings.HasPrefix(line, "|lose|") {
-					battleEnded = true
+				continue
+			}
+			if strings.HasPrefix(msg, "__ERROR__:") {
+				reconnectAttempts++
+				if reconnectAttempts < maxReconnects {
+					fmt.Fprintf(w, "data: <p>Reconectando con Showdown... (intento %d/%d)</p>\n\n", reconnectAttempts+1, maxReconnects)
+					flusher.Flush()
+					time.Sleep(2 * time.Second)
+					goto reconnect
+				} else {
+					fmt.Fprintf(w, "data: <p class='error'>Error persistente al conectar con Showdown: %s</p>\n\n", msg[len("__ERROR__:"):])
+					flusher.Flush()
+					return
 				}
 			}
-		}
-		if anyLogSent {
-			summary := parser.RenderBattleState(battleState)
-			fmt.Fprintf(w, "data: %s\n\n", summary)
-			flusher.Flush()
-		}
-		if battleEnded {
-			log.Println("Batalla terminada, cerrando conexión SSE.")
-			close(done)
+			lines := strings.Split(msg, "\n")
+			var anyLogSent bool
+			var battleEnded bool
+			for _, line := range lines {
+				if strings.HasPrefix(line, "|turn|") ||
+					strings.HasPrefix(line, "|move|") ||
+					strings.HasPrefix(line, "|switch|") ||
+					strings.HasPrefix(line, "|damage|") ||
+					strings.HasPrefix(line, "|faint|") ||
+					strings.HasPrefix(line, "|start|") ||
+					strings.HasPrefix(line, "|upkeep|") ||
+					strings.HasPrefix(line, "|win|") ||
+					strings.HasPrefix(line, "|lose|") ||
+					strings.HasPrefix(line, "|player|") {
+					parser.ProcessLine(battleState, line)
+					log.Printf("Enviando al frontend: %s", line)
+					fmt.Fprintf(w, "data: <p class='logline'>%s</p>\n\n", template.HTMLEscapeString(line))
+					flusher.Flush()
+					anyLogSent = true
+					if strings.HasPrefix(line, "|win|") || strings.HasPrefix(line, "|lose|") {
+						battleEnded = true
+					}
+				}
+			}
+			if anyLogSent {
+				summary := parser.RenderBattleState(battleState)
+				fmt.Fprintf(w, "data: %s\n\n", summary)
+				flusher.Flush()
+			}
+			if battleEnded {
+				log.Println("Batalla terminada, cerrando conexión SSE.")
+				return
+			}
+		case <-done:
 			return
 		}
 	}
-
-	log.Println("El cliente se ha desconectado.")
 }
 
 func main() {

@@ -90,3 +90,15 @@ func GetMoveTypeAndPower(name string) (string, int, error) {
 	}
 	return "", 80, fmt.Errorf("movimiento no encontrado: %s", name)
 }
+
+func GetAllMoves() []MoveData {
+	var moves []MoveData
+	for _, move := range moveDB {
+		moves = append(moves, move)
+	}
+	return moves
+}
+
+func GetPokemonMovepool(pokemonName string) []MoveData {
+	return GetAllMoves()
+}

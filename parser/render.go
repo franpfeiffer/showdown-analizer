@@ -21,7 +21,6 @@ func capitalizeFirst(s string) string {
 	return string(runes)
 }
 
-// la maldita tabla de tipos hermano
 var typeChart = map[string]map[string]float64{
 	"Fire": {
 		"Water": 0.5, "Rock": 0.5, "Fire": 0.5, "Grass": 2, "Ice": 2, "Bug": 2, "Steel": 2, "Dragon": 0.5,
@@ -50,6 +49,33 @@ var typeChart = map[string]map[string]float64{
 	"Fighting": {
 		"Normal": 2, "Rock": 2, "Steel": 2, "Ice": 2, "Dark": 2, "Ghost": 0, "Poison": 0.5, "Flying": 0.5, "Psychic": 0.5, "Bug": 0.5, "Fairy": 0.5,
 	},
+	"Normal": {
+		"Rock": 0.5, "Ghost": 0, "Steel": 0.5,
+	},
+	"Electric": {
+		"Flying": 2, "Water": 2, "Ground": 0, "Grass": 0.5, "Electric": 0.5, "Dragon": 0.5,
+	},
+	"Grass": {
+		"Ground": 2, "Rock": 2, "Water": 2, "Flying": 0.5, "Poison": 0.5, "Bug": 0.5, "Steel": 0.5, "Fire": 0.5, "Grass": 0.5, "Dragon": 0.5,
+	},
+	"Psychic": {
+		"Fighting": 2, "Poison": 2, "Steel": 0.5, "Psychic": 0.5, "Dark": 0,
+	},
+	"Ghost": {
+		"Ghost": 2, "Psychic": 2, "Normal": 0, "Dark": 0.5,
+	},
+	"Poison": {
+		"Grass": 2, "Fairy": 2, "Poison": 0.5, "Ground": 0.5, "Rock": 0.5, "Ghost": 0.5, "Steel": 0,
+	},
+	"Ground": {
+		"Poison": 2, "Rock": 2, "Steel": 2, "Fire": 2, "Electric": 2, "Flying": 0, "Bug": 0.5, "Grass": 0.5,
+	},
+	"Bug": {
+		"Grass": 2, "Psychic": 2, "Dark": 2, "Fighting": 0.5, "Flying": 0.5, "Poison": 0.5, "Ghost": 0.5, "Steel": 0.5, "Fire": 0.5, "Fairy": 0.5,
+	},
+	"Fairy": {
+		"Fighting": 2, "Dragon": 2, "Dark": 2, "Poison": 0.5, "Steel": 0.5, "Fire": 0.5,
+	},
 }
 
 func getTypeEffectiveness(moveType string, targetTypes []string) float64 {
@@ -62,6 +88,68 @@ func getTypeEffectiveness(moveType string, targetTypes []string) float64 {
 		}
 	}
 	return eff
+}
+
+func getWeaknesses(pokemonTypes []string) []string {
+	weaknesses := make(map[string]bool)
+	
+	for attackType, effectiveness := range typeChart {
+		for _, defenseType := range pokemonTypes {
+			if eff, exists := effectiveness[defenseType]; exists && eff > 1 {
+				weaknesses[attackType] = true
+			}
+		}
+	}
+	
+	var result []string
+	for weakness := range weaknesses {
+		result = append(result, weakness)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func getSuggestions(player *game.Player, opponent *game.Pokemon) string {
+	if player.Active == nil || len(player.Active.Moves) == 0 {
+		return "<i>Sin movimientos conocidos aún.</i>"
+	}
+	
+	type moveScore struct {
+		move  game.Move
+		score float64
+		eff   float64
+	}
+	
+	var scored []moveScore
+	for _, move := range player.Active.Moves {
+		power := move.Power
+		if power == 0 {
+			power = 80
+		}
+		eff := getTypeEffectiveness(move.Type, opponent.Type)
+		score := float64(power) * eff
+		scored = append(scored, moveScore{move, score, eff})
+	}
+	
+	sort.Slice(scored, func(i, j int) bool { 
+		return scored[i].score > scored[j].score 
+	})
+	
+	var result strings.Builder
+	result.WriteString("Movimientos conocidos:<br>")
+	for i, ms := range scored {
+		effText := ""
+		if ms.eff > 1 {
+			effText = " (¡Súper efectivo!)"
+		} else if ms.eff < 1 {
+			effText = " (No muy efectivo)"
+		}
+		
+		result.WriteString(fmt.Sprintf("%d. <b>%s</b> [%s] - %.0f pts%s<br>", 
+			i+1, ms.move.Name, ms.move.Type, ms.score, effText))
+	}
+	
+	return result.String()
 }
 
 func bestMove(p1 *game.Pokemon, p2 *game.Pokemon) (game.Move, float64) {
@@ -175,7 +263,21 @@ func RenderBattleState(state *game.BattleState) string {
 			if poke.Ability != "" {
 				ability = fmt.Sprintf("<span style='color:#7ed6df;'>%s</span>", poke.Ability)
 			}
-			sb.WriteString(fmt.Sprintf("<b>%s</b> %s %s <span style='color:#aaa;'>[%s]</span> %s<br>", poke.Name, fainted, status, ps, ability))
+			
+			typeStr := ""
+			if len(poke.Type) > 0 {
+				typeStr = fmt.Sprintf(" <span style='color:#9b9b9b;'>(%s)</span>", strings.Join(poke.Type, "/"))
+			}
+			
+			sb.WriteString(fmt.Sprintf("<b>%s</b>%s %s %s <span style='color:#aaa;'>[%s]</span> %s<br>", poke.Name, typeStr, fainted, status, ps, ability))
+			
+			if len(poke.Type) > 0 {
+				weaknesses := getWeaknesses(poke.Type)
+				if len(weaknesses) > 0 {
+					sb.WriteString(fmt.Sprintf("<span style='color:#ff6b6b;'>Débil a: %s</span><br>", strings.Join(weaknesses, ", ")))
+				}
+			}
+			
 			if len(poke.Boosts) > 0 {
 				boosts := make([]string, 0, len(poke.Boosts))
 				for stat, val := range poke.Boosts {
@@ -208,29 +310,12 @@ func RenderBattleState(state *game.BattleState) string {
 	}
 
 	if p1 != nil && p2 != nil && p1.Active != nil && p2.Active != nil {
-		best, score := bestMove(p1.Active, p2.Active)
-		sb.WriteString("<div class='suggestion'><b>Sugerencia para " + p1.Name + ":</b><br>")
-		if len(p1.Active.Moves) > 0 {
-			moveList := []string{}
-			for _, m := range p1.Active.Moves {
-				moveList = append(moveList, fmt.Sprintf("<b>%s</b> [%s] Potencia: %d", m.Name, m.Type, m.Power))
-			}
-			sb.WriteString("Movimientos conocidos: " + strings.Join(moveList, ", ") + "<br>")
-		} else {
-			sb.WriteString("<i>Sin movimientos conocidos aún para este Pokémon.</i><br>")
-		}
-		if best.Name != "" {
-			eff := getTypeEffectiveness(best.Type, p2.Active.Type)
-			efftxt := ""
-			if eff > 1 {
-				efftxt = " (¡Súper efectivo!)"
-			} else if eff < 1 {
-				efftxt = " (No muy efectivo)"
-			}
-			sb.WriteString(fmt.Sprintf("Mejor movimiento: <b>%s</b> [%s] Potencia estimada: %d%s", best.Name, best.Type, score, efftxt))
-		} else {
-			sb.WriteString("<i>No hay recomendación disponible aún.</i>")
-		}
+		sb.WriteString("<div class='suggestion'><b>Sugerencias para " + p1.Name + ":</b><br>")
+		sb.WriteString(getSuggestions(p1, p2.Active))
+		sb.WriteString("</div>")
+		
+		sb.WriteString("<div class='suggestion'><b>Sugerencias para " + p2.Name + ":</b><br>")
+		sb.WriteString(getSuggestions(p2, p1.Active))
 		sb.WriteString("</div>")
 	}
 

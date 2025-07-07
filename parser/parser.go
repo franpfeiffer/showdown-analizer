@@ -35,6 +35,7 @@ func ProcessLine(state *game.BattleState, line string) {
 					Name: name,
 					Team: make(map[string]*game.Pokemon),
 				}
+				log.Printf("[Parser] Creado jugador %s: %s", id, name)
 			}
 		}
 	case "poke":
@@ -68,10 +69,21 @@ func ProcessLine(state *game.BattleState, line string) {
 			userInfo := strings.SplitN(parts[2], ": ", 2)
 			if len(userInfo) == 2 {
 				playerID := string(userInfo[0][:2])
-				pokeName := userInfo[1]
+				pokeName := strings.Split(userInfo[1], ",")[0]
+				cleanName := strings.TrimSpace(pokeName)
+
 				if player, ok := state.Players[playerID]; ok {
-					player.Active = player.GetOrCreatePokemon(pokeName)
-					log.Printf("[Parser] %s ahora activo: %s", playerID, pokeName)
+					player.Active = player.GetOrCreatePokemon(cleanName)
+
+					types := data.GetPokemonTypes(cleanName)
+					if len(types) > 0 {
+						player.Active.Type = types
+						log.Printf("[Parser] %s (%s) tipos cargados: %v", playerID, cleanName, types)
+					} else {
+						log.Printf("[Parser] ADVERTENCIA: No se encontraron tipos para %s", cleanName)
+					}
+
+					log.Printf("[Parser] %s ahora activo: %s", playerID, cleanName)
 				}
 			}
 		}
