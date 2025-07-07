@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"showdown-analizer/client"
 	"showdown-analizer/data"
 	"showdown-analizer/game"
@@ -217,6 +218,14 @@ reconnect:
 	}
 }
 
+func getPort() string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "42069"
+	}
+	return ":" + port
+}
+
 func main() {
 	if err := data.LoadPokemonData("data/pokedex.json"); err != nil {
 		log.Fatalf("Error cargando datos de Pokémon: %v", err)
@@ -233,12 +242,14 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/connect", handleConnect)
 
-	fmt.Println("Servidor iniciado en http://localhost:42069")
+	port := getPort()
+	fmt.Printf("Servidor iniciado en puerto %s\n", port)
 	srv := &http.Server{
-		Addr:         ":42069",
+		Addr:         port,
 		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	log.Fatal(srv.ListenAndServe())
 }

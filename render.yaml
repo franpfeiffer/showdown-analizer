@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: showdown-analizer
+    runtime: go
+    buildCommand: go build -o main .
+    startCommand: ./main
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+    healthCheckPath: /
