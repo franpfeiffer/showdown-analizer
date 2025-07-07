@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"log"
 	"showdown-analizer/game"
 	"sort"
 	"strings"
@@ -202,9 +203,22 @@ func RenderBattleState(state *game.BattleState) string {
 		}
 	}
 
+	if p1 != nil && p1.Active != nil {
+		log.Printf("[Render] Movimientos conocidos de %s: %v", p1.Active.Name, p1.Active.Moves)
+	}
+
 	if p1 != nil && p2 != nil && p1.Active != nil && p2.Active != nil {
 		best, score := bestMove(p1.Active, p2.Active)
 		sb.WriteString("<div class='suggestion'><b>Sugerencia para " + p1.Name + ":</b><br>")
+		if len(p1.Active.Moves) > 0 {
+			moveList := []string{}
+			for _, m := range p1.Active.Moves {
+				moveList = append(moveList, fmt.Sprintf("<b>%s</b> [%s] Potencia: %d", m.Name, m.Type, m.Power))
+			}
+			sb.WriteString("Movimientos conocidos: " + strings.Join(moveList, ", ") + "<br>")
+		} else {
+			sb.WriteString("<i>Sin movimientos conocidos aún para este Pokémon.</i><br>")
+		}
 		if best.Name != "" {
 			eff := getTypeEffectiveness(best.Type, p2.Active.Type)
 			efftxt := ""
@@ -213,26 +227,9 @@ func RenderBattleState(state *game.BattleState) string {
 			} else if eff < 1 {
 				efftxt = " (No muy efectivo)"
 			}
-			sb.WriteString(fmt.Sprintf("Mejor movimiento: <b>%s</b> [%s] Potencia estimada: %.0f%s<br>", best.Name, best.Type, score, efftxt))
+			sb.WriteString(fmt.Sprintf("Mejor movimiento: <b>%s</b> [%s] Potencia estimada: %d%s", best.Name, best.Type, score, efftxt))
 		} else {
-			sb.WriteString("No hay movimientos conocidos.<br>")
-		}
-		if sw := bestSwitch(p1, p2.Active); sw != nil {
-			sb.WriteString(fmt.Sprintf("<span style='color:#e74c3c;'>¡Conviene cambiar a %s!</span><br>", sw.Name))
-		}
-		if len(p2.Active.Moves) > 0 {
-			sb.WriteString("<br>Movimientos peligrosos de " + p2.Name + ":<ul>")
-			for _, m := range bestMovesList(p2.Active, p1.Active) {
-				eff := getTypeEffectiveness(m.Type, p1.Active.Type)
-				efftxt := ""
-				if eff > 1 {
-					efftxt = " (¡Súper efectivo!)"
-				} else if eff < 1 {
-					efftxt = " (No muy efectivo)"
-				}
-				sb.WriteString(fmt.Sprintf("<li>%s [%s] Potencia estimada: %d%s</li>", m.Name, m.Type, m.Power, efftxt))
-			}
-			sb.WriteString("</ul>")
+			sb.WriteString("<i>No hay recomendación disponible aún.</i>")
 		}
 		sb.WriteString("</div>")
 	}

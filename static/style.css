@@ -137,3 +137,19 @@ button:hover {
 .logline strong {
     color: #e0e0e0;
 }
+
+.suggestion-highlight {
+    background: #232b3a;
+    border: 2px solid #4fc3f7;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+    color: #e0f7fa;
+    font-size: 1.08em;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(80,200,255,0.08);
+}
+.suggestion-highlight b {
+    color: #fff59d;
+    font-weight: bold;
+}

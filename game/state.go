@@ -40,3 +40,15 @@ func NewBattleState() *BattleState {
 		FieldEffects: make(map[string]bool),
 	}
 }
+
+func (p *Player) GetOrCreatePokemon(name string) *Pokemon {
+	if p.Team == nil {
+		p.Team = make(map[string]*Pokemon)
+	}
+	poke, ok := p.Team[name]
+	if !ok {
+		poke = &Pokemon{Name: name, Moves: []Move{}, Boosts: map[string]int{}}
+		p.Team[name] = poke
+	}
+	return poke
+}

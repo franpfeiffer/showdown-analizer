@@ -27,7 +27,9 @@
 
             <div class="result-container">
                 <h2>Log de Batalla En Vivo</h2>
-                <div id="suggestion-box" style="margin-bottom: 20px;"></div>
+                <div id="suggestion-box-container">
+                    <div id="suggestion-box" class="suggestion-highlight"></div>
+                </div>
                 <div id="battle-log" class="log-window">
                     <p class="placeholder">Los eventos se muestran aca...</p>
                 </div>
@@ -36,32 +38,28 @@
     </div>
 
     <script>
-        document.getElementById('connect-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const roomid = document.getElementById('roomid-input').value.trim();
-            if (!roomid) {
-                alert('Por favor ingresa un ID de sala válido');
-                return;
-            }
+        let eventSource;
+        let reconnectAttempts = 0;
+        const maxReconnects = 10;
+        let lastRoomId = null;
 
+        function connectToBattle(roomid) {
             const battleLog = document.getElementById('battle-log');
+            const suggestionBox = document.getElementById('suggestion-box');
             battleLog.innerHTML = '<p class="placeholder">Conectando...</p>';
+            suggestionBox.innerHTML = '';
 
-            if (window.eventSource) {
-                window.eventSource.close();
+            if (eventSource) {
+                eventSource.close();
             }
 
-            const eventSource = new EventSource(`http://localhost:42069/connect?roomid=${encodeURIComponent(roomid)}`);
-            window.eventSource = eventSource;
+            eventSource = new EventSource(`http://localhost:42069/connect?roomid=${encodeURIComponent(roomid)}`);
+            lastRoomId = roomid;
 
             eventSource.onmessage = function(event) {
-                const battleLog = document.getElementById('battle-log');
-                const suggestionBox = document.getElementById('suggestion-box');
                 if (battleLog.querySelector('.placeholder')) {
                     battleLog.innerHTML = '';
                 }
-                
                 if (event.data.includes("class='battle-summary'")) {
                     suggestionBox.innerHTML = event.data;
                 } else {
@@ -73,15 +71,30 @@
             };
 
             eventSource.onerror = function(event) {
-                console.error('EventSource error:', event);
-                const battleLog = document.getElementById('battle-log');
-                battleLog.innerHTML = '<p class="error">Error de conexión. Verifica el ID de la sala e intenta nuevamente.</p>';
+                if (reconnectAttempts < maxReconnects) {
+                    reconnectAttempts++;
+                    setTimeout(() => {
+                        connectToBattle(lastRoomId);
+                    }, 2000 * reconnectAttempts); // backoff
+                } else {
+                    battleLog.innerHTML = '<p class="error">Error de conexión. Verifica el ID de la sala e intenta nuevamente.</p>';
+                }
                 eventSource.close();
             };
 
             eventSource.onopen = function(event) {
-                console.log('EventSource connection opened');
+                reconnectAttempts = 0;
             };
+        }
+
+        document.getElementById('connect-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const roomid = document.getElementById('roomid-input').value.trim();
+            if (!roomid) {
+                alert('Por favor ingresa un ID de sala válido');
+                return;
+            }
+            connectToBattle(roomid);
         });
     </script>
 </body>

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"log"
 	"showdown-analizer/data"
 	"showdown-analizer/game"
 	"strconv"
@@ -38,7 +39,7 @@ func ProcessLine(state *game.BattleState, line string) {
 		}
 	case "poke":
 		if len(parts) >= 4 {
-			id := parts[2] // p1
+			id := parts[2]
 			pokeInfo := strings.Split(parts[3], ",")
 			name := strings.TrimSpace(pokeInfo[0])
 			types := data.GetPokemonTypes(name)
@@ -63,26 +64,14 @@ func ProcessLine(state *game.BattleState, line string) {
 			}
 		}
 	case "switch":
-		if len(parts) >= 4 {
-			activeInfo := strings.SplitN(parts[2], ": ", 2)
-			if len(activeInfo) == 2 {
-				playerID := string(activeInfo[0][:2])
-				pokeName := activeInfo[1]
-				types := data.GetPokemonTypes(pokeName)
+		if len(parts) >= 3 {
+			userInfo := strings.SplitN(parts[2], ": ", 2)
+			if len(userInfo) == 2 {
+				playerID := string(userInfo[0][:2])
+				pokeName := userInfo[1]
 				if player, ok := state.Players[playerID]; ok {
-					if poke, ok := player.Team[pokeName]; ok {
-						poke.Type = types
-						player.Active = poke
-						if len(parts) >= 4 {
-							hpInfo := strings.Split(parts[4-1], "/")
-							if len(hpInfo) == 2 {
-								hp, _ := strconv.Atoi(strings.TrimSpace(hpInfo[0]))
-								maxhp, _ := strconv.Atoi(strings.TrimSpace(hpInfo[1]))
-								poke.HP = hp
-								poke.MaxHP = maxhp
-							}
-						}
-					}
+					player.Active = player.GetOrCreatePokemon(pokeName)
+					log.Printf("[Parser] %s ahora activo: %s", playerID, pokeName)
 				}
 			}
 		}
@@ -94,16 +83,23 @@ func ProcessLine(state *game.BattleState, line string) {
 				moveName := parts[3]
 				type_, power, _ := data.GetMoveTypeAndPower(moveName)
 				move := game.Move{Name: moveName, Type: type_, Power: power}
-				if player, ok := state.Players[playerID]; ok && player.Active != nil {
-					exists := false
-					for _, m := range player.Active.Moves {
-						if m.Name == move.Name {
-							exists = true
-							break
-						}
+				if player, ok := state.Players[playerID]; ok {
+					if player.Active == nil {
+						pokeName := userInfo[1]
+						player.Active = player.GetOrCreatePokemon(pokeName)
 					}
-					if !exists {
-						player.Active.Moves = append(player.Active.Moves, move)
+					if player.Active != nil {
+						exists := false
+						for _, m := range player.Active.Moves {
+							if m.Name == move.Name {
+								exists = true
+								break
+							}
+						}
+						if !exists {
+							player.Active.Moves = append(player.Active.Moves, move)
+							log.Printf("[Parser] %s (%s) aprende movimiento: %s", playerID, player.Active.Name, move.Name)
+						}
 					}
 				}
 			}
