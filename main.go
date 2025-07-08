@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"log"
@@ -28,6 +29,9 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleConnect(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
 	log.Printf("Received connection request from %s", r.RemoteAddr)
 
 	roomID := r.URL.Query().Get("roomid")
@@ -61,6 +65,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 
 	defer func() {
+		log.Printf("Cleaning up SSE connection for room %s", roomID)
 		select {
 		case <-done:
 		default:
@@ -90,7 +95,11 @@ reconnect:
 		}
 		return
 	}
-	defer sdClient.Conn.Close()
+	defer func() {
+		if sdClient != nil && sdClient.Conn != nil {
+			sdClient.Conn.Close()
+		}
+	}()
 
 	log.Printf("Showdown client created successfully")
 
@@ -108,6 +117,7 @@ reconnect:
 
 	go func() {
 		defer func() {
+			log.Printf("Closing Showdown message reader for room %s", roomID)
 			select {
 			case <-done:
 			default:
@@ -119,6 +129,8 @@ reconnect:
 			select {
 			case <-done:
 				return
+			case <-ctx.Done():
+				return
 			default:
 				_, message, err := sdClient.Conn.ReadMessage()
 				if err != nil {
@@ -126,6 +138,7 @@ reconnect:
 					select {
 					case messages <- "__ERROR__:" + err.Error():
 					case <-done:
+					case <-ctx.Done():
 					}
 					return
 				}
@@ -133,6 +146,7 @@ reconnect:
 				select {
 				case messages <- string(message):
 				case <-done:
+				case <-ctx.Done():
 				}
 			}
 		}
@@ -148,8 +162,12 @@ reconnect:
 				case messages <- "__PING__":
 				case <-done:
 					return
+				case <-ctx.Done():
+					return
 				}
 			case <-done:
+				return
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -157,8 +175,12 @@ reconnect:
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Printf("Context cancelled for room %s", roomID)
+			return
 		case msg, ok := <-messages:
 			if !ok {
+				log.Printf("Messages channel closed for room %s", roomID)
 				return
 			}
 			if msg == "__PING__" {
@@ -209,10 +231,13 @@ reconnect:
 				flusher.Flush()
 			}
 			if battleEnded {
-				log.Println("Batalla terminada, cerrando conexión SSE.")
+				log.Printf("Batalla terminada en room %s, cerrando SOLO esta conexión SSE.", roomID)
+				fmt.Fprintf(w, "data: <p class='success'>¡Batalla terminada! El servidor sigue funcionando para nuevas conexiones.</p>\n\n")
+				flusher.Flush()
 				return
 			}
 		case <-done:
+			log.Printf("Done signal received for room %s", roomID)
 			return
 		}
 	}
@@ -221,12 +246,14 @@ reconnect:
 func getPort() string {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "42069"
+		port = "8080"
 	}
 	return ":" + port
 }
 
 func main() {
+	log.Printf("Iniciando servidor Showdown Analyzer...")
+
 	if err := data.LoadPokemonData("data/pokedex.json"); err != nil {
 		log.Fatalf("Error cargando datos de Pokémon: %v", err)
 	}
@@ -242,8 +269,14 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/connect", handleConnect)
 
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	port := getPort()
-	fmt.Printf("Servidor iniciado en puerto %s\n", port)
+	log.Printf("Servidor iniciado en puerto %s", port)
+
 	srv := &http.Server{
 		Addr:         port,
 		Handler:      mux,
@@ -251,5 +284,7 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
+
+	log.Printf("Servidor listo para recibir conexiones en puerto %s", port)
 	log.Fatal(srv.ListenAndServe())
 }
