@@ -1,0 +1,16 @@
+version: 1.0
+runtime: docker
+build:
+  commands:
+    build:
+      - echo "Building Go application..."
+      - docker build -t showdown-analizer .
+run:
+  runtime-version: latest
+  command: ./main
+  network:
+    port: 8080
+    env: PORT
+  env:
+    - name: PORT
+      value: "42069"
